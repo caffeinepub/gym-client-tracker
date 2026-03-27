@@ -12,13 +12,34 @@ import {
 import { Loader2, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import type { LogEntry } from "../backend";
 import { useAddLogEntry } from "../hooks/useQueries";
 
 interface Props {
   clientId: bigint;
+  entries?: LogEntry[];
 }
 
-export default function LogEntryForm({ clientId }: Props) {
+function entryToDate(entry: LogEntry): string {
+  const ms = Number(entry.date / 1000000n);
+  return new Date(ms).toISOString().split("T")[0];
+}
+
+function getRefValues(entries: LogEntry[], date: string) {
+  const exact = entries.find((e) => entryToDate(e) === date);
+  if (exact) return { entry: exact, isExact: true };
+  if (entries.length > 0) {
+    const sorted = [...entries].sort((a, b) => Number(b.date - a.date));
+    return { entry: sorted[0], isExact: false };
+  }
+  return { entry: null, isExact: false };
+}
+
+function numStr(val: number): string {
+  return val === 0 ? "" : String(val);
+}
+
+export default function LogEntryForm({ clientId, entries = [] }: Props) {
   const today = new Date().toISOString().split("T")[0];
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState(today);
@@ -38,6 +59,42 @@ export default function LogEntryForm({ clientId }: Props) {
 
   const addEntry = useAddLogEntry(clientId);
 
+  function applyEntry(entry: LogEntry) {
+    setHeight(numStr(entry.height));
+    setWeight(numStr(entry.weight));
+    setSteps(numStr(Number(entry.stepsDaily)));
+    setWater(numStr(entry.waterIntake));
+    setSleep(numStr(entry.sleepHours));
+    setDiet(numStr(entry.dietPercent));
+    setWaist(numStr(entry.waistCm));
+    setHip(numStr(entry.hipCm));
+    setCalories(numStr(entry.calorieIntake));
+    setProtein(numStr(entry.proteinIntake));
+    setCardio(numStr(entry.cardioDuration));
+    setWorkouts(entry.workoutsToday);
+    // Attendance intentionally not pre-filled — user must choose
+  }
+
+  const handleOpen = () => {
+    if (entries.length > 0) {
+      const { entry } = getRefValues(entries, today);
+      if (entry) applyEntry(entry);
+    }
+    setDate(today);
+    setAttendance("");
+    setOpen(true);
+  };
+
+  const handleDateChange = (newDate: string) => {
+    setDate(newDate);
+    if (entries.length > 0) {
+      const { entry } = getRefValues(entries, newDate);
+      if (entry) applyEntry(entry);
+    }
+  };
+
+  const isExistingDate = entries.some((e) => entryToDate(e) === date);
+
   const resetForm = () => {
     setDate(today);
     setHeight("");
@@ -55,24 +112,38 @@ export default function LogEntryForm({ clientId }: Props) {
     setWorkouts("");
   };
 
+  const resolveNum = (
+    val: string,
+    ref: number | null,
+    isInt = false,
+  ): number => {
+    const parsed = isInt ? Number.parseInt(val, 10) : Number.parseFloat(val);
+    if (!Number.isNaN(parsed)) return parsed;
+    if (ref !== null) return ref;
+    return 0;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const { entry: ref } = getRefValues(entries, date);
+
     addEntry.mutate(
       {
         date,
-        height: Number.parseFloat(height),
-        weight: Number.parseFloat(weight),
-        steps: Number.parseInt(steps, 10),
-        waterIntake: Number.parseFloat(water),
-        sleepHours: Number.parseFloat(sleep),
-        dietPercent: Number.parseFloat(diet),
+        height: resolveNum(height, ref ? ref.height : null),
+        weight: resolveNum(weight, ref ? ref.weight : null),
+        steps: resolveNum(steps, ref ? Number(ref.stepsDaily) : null, true),
+        waterIntake: resolveNum(water, ref ? ref.waterIntake : null),
+        sleepHours: resolveNum(sleep, ref ? ref.sleepHours : null),
+        dietPercent: resolveNum(diet, ref ? ref.dietPercent : null),
         attendance: attendance === "present",
-        waistCm: Number.parseFloat(waist),
-        hipCm: Number.parseFloat(hip),
-        calorieIntake: Number.parseFloat(calories),
-        proteinIntake: Number.parseFloat(protein),
-        cardioDuration: Number.parseFloat(cardio),
-        workoutsToday: workouts,
+        waistCm: resolveNum(waist, ref ? ref.waistCm : null),
+        hipCm: resolveNum(hip, ref ? ref.hipCm : null),
+        calorieIntake: resolveNum(calories, ref ? ref.calorieIntake : null),
+        proteinIntake: resolveNum(protein, ref ? ref.proteinIntake : null),
+        cardioDuration: resolveNum(cardio, ref ? ref.cardioDuration : null),
+        workoutsToday:
+          workouts.trim() !== "" ? workouts : ref ? ref.workoutsToday : "",
       },
       {
         onSuccess: () => {
@@ -81,7 +152,7 @@ export default function LogEntryForm({ clientId }: Props) {
           setOpen(false);
         },
         onError: (err) => {
-          toast.error(err.message || "Failed to save entry");
+          toast.error((err as Error).message || "Failed to save entry");
         },
       },
     );
@@ -91,7 +162,7 @@ export default function LogEntryForm({ clientId }: Props) {
     return (
       <Button
         data-ocid="log_entry.open_modal_button"
-        onClick={() => setOpen(true)}
+        onClick={handleOpen}
         className="gap-2"
       >
         <Plus className="w-4 h-4" />
@@ -120,8 +191,12 @@ export default function LogEntryForm({ clientId }: Props) {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {isExistingDate && (
+            <div className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              An entry for this date already exists and will be updated.
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
-            {/* Existing fields */}
             <div className="space-y-1.5">
               <Label htmlFor="log-date">Date</Label>
               <Input
@@ -129,7 +204,7 @@ export default function LogEntryForm({ clientId }: Props) {
                 data-ocid="log_entry.input"
                 type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => handleDateChange(e.target.value)}
                 required
               />
             </div>
@@ -144,7 +219,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={height}
                 onChange={(e) => setHeight(e.target.value)}
                 placeholder="175.0"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -158,7 +232,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
                 placeholder="70.0"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -170,7 +243,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={steps}
                 onChange={(e) => setSteps(e.target.value)}
                 placeholder="8000"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -184,7 +256,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={water}
                 onChange={(e) => setWater(e.target.value)}
                 placeholder="2.5"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -198,11 +269,8 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={sleep}
                 onChange={(e) => setSleep(e.target.value)}
                 placeholder="7.5"
-                required
               />
             </div>
-
-            {/* New fields */}
             <div className="space-y-1.5">
               <Label htmlFor="log-diet">Diet (%)</Label>
               <Input
@@ -214,7 +282,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={diet}
                 onChange={(e) => setDiet(e.target.value)}
                 placeholder="85"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -222,7 +289,6 @@ export default function LogEntryForm({ clientId }: Props) {
               <Select
                 value={attendance}
                 onValueChange={(v) => setAttendance(v as "present" | "absent")}
-                required
               >
                 <SelectTrigger id="log-attendance" data-ocid="log_entry.select">
                   <SelectValue placeholder="Select..." />
@@ -244,7 +310,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={waist}
                 onChange={(e) => setWaist(e.target.value)}
                 placeholder="80.0"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -258,7 +323,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={hip}
                 onChange={(e) => setHip(e.target.value)}
                 placeholder="95.0"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -270,7 +334,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={calories}
                 onChange={(e) => setCalories(e.target.value)}
                 placeholder="2000"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -283,7 +346,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={protein}
                 onChange={(e) => setProtein(e.target.value)}
                 placeholder="150"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -295,7 +357,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={cardio}
                 onChange={(e) => setCardio(e.target.value)}
                 placeholder="30"
-                required
               />
             </div>
             <div className="space-y-1.5">
@@ -306,7 +367,6 @@ export default function LogEntryForm({ clientId }: Props) {
                 value={workouts}
                 onChange={(e) => setWorkouts(e.target.value)}
                 placeholder="Chest, Triceps"
-                required
               />
             </div>
           </div>

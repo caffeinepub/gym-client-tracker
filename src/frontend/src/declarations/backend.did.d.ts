@@ -72,6 +72,12 @@ export interface _SERVICE {
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'verifyTrainerPin' : ActorMethod<[string], boolean>,
+  'updateTrainerPin' : ActorMethod<[string], undefined>,
+  'setClientPin' : ActorMethod<[ClientId, string], undefined>,
+  'removeClientPin' : ActorMethod<[ClientId], undefined>,
+  'lookupClientByPin' : ActorMethod<[string], [] | [ClientId]>,
+  'getClientPin' : ActorMethod<[ClientId], [] | [string]>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

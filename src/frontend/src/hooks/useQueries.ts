@@ -103,3 +103,46 @@ export function useAddLogEntry(clientId: bigint | null) {
     },
   });
 }
+
+export function useGetAllClientPins() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Array<[bigint, string]>>({
+    queryKey: ["clientPins"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return (actor as any).getAllClientPins();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useSetClientPin() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      clientId,
+      pin,
+    }: { clientId: bigint; pin: string }) => {
+      if (!actor) throw new Error("Not connected");
+      return (actor as any).setClientPin(clientId, pin);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clientPins"] });
+    },
+  });
+}
+
+export function useRemoveClientPin() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (clientId: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      return (actor as any).removeClientPin(clientId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clientPins"] });
+    },
+  });
+}

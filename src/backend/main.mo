@@ -3,10 +3,9 @@ import Map "mo:core/Map";
 import Time "mo:core/Time";
 import Int "mo:core/Int";
 import Runtime "mo:core/Runtime";
-import Float "mo:core/Float";
-import Nat "mo:core/Nat";
 import Order "mo:core/Order";
 import Principal "mo:core/Principal";
+import Prim "mo:prim";
 
 actor {
   type ClientId = Nat;
@@ -68,41 +67,88 @@ actor {
     name : Text;
   };
 
-  // Kept for upgrade compatibility with the previous version that used authorization.
-  // Do not remove until a migration function is in place.
-  let accessControlState = AccessControl.initState();
+  public type UserRole = {
+    #admin;
+    #user;
+    #guest;
+  };
 
-  let _unusedAcs = accessControlState; // suppress unused warning
+  let accessControlState = AccessControl.initState();
+  let _unusedAcs = accessControlState;
 
   let userProfiles = Map.empty<Principal, UserProfile>();
   let clients = Map.empty<ClientId, Client>();
   let logEntries = Map.empty<LogEntryId, LogEntry>();
+  let clientPins = Map.empty<ClientId, Text>();
 
   var nextClientId = 0;
   var nextLogEntryId = 0;
+  var trainerPin : Text = "1234";
 
-  public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
-    userProfiles.get(caller);
+  let dayNs : Int = 86_400_000_000_000;
+
+  public shared ({ caller }) func _initializeAccessControlWithSecret(userSecret : Text) : async () {
+    switch (Prim.envVar<system>("CAFFEINE_ADMIN_TOKEN")) {
+      case (null) {};
+      case (?adminToken) {
+        AccessControl.initialize(accessControlState, caller, adminToken, userSecret);
+      };
+    };
   };
 
-  public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
-    userProfiles.get(user);
+  public query ({ caller = _ }) func getCallerUserProfile() : async ?UserProfile {
+    null;
+  };
+
+  public query ({ caller = _ }) func getUserProfile(_user : Principal) : async ?UserProfile {
+    null;
   };
 
   public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
     userProfiles.add(caller, profile);
   };
 
-  public shared func assignCallerUserRole(_user : Principal, _role : Text) : async () {
+  public shared func assignCallerUserRole(_user : Principal, _role : UserRole) : async () {
     ();
   };
 
-  public query func getCallerUserRole() : async Text {
-    "admin";
+  public query func getCallerUserRole() : async UserRole {
+    #admin;
   };
 
   public query func isCallerAdmin() : async Bool {
     true;
+  };
+
+  public query func verifyTrainerPin(pin : Text) : async Bool {
+    pin == trainerPin;
+  };
+
+  public shared func updateTrainerPin(pin : Text) : async () {
+    trainerPin := pin;
+  };
+
+  public shared func setClientPin(clientId : ClientId, pin : Text) : async () {
+    ignore getClientInternal(clientId);
+    clientPins.add(clientId, pin);
+  };
+
+  public shared func removeClientPin(clientId : ClientId) : async () {
+    clientPins.remove(clientId);
+  };
+
+  public query func getAllClientPins() : async [(ClientId, Text)] {
+    clientPins.entries().toArray();
+  };
+
+  public query func verifyClientPin(pin : Text) : async ?ClientId {
+    var found : ?ClientId = null;
+    for ((cid, p) in clientPins.entries()) {
+      if (p == pin) {
+        found := ?cid;
+      };
+    };
+    found;
   };
 
   func getClientInternal(id : ClientId) : Client {
@@ -135,19 +181,37 @@ actor {
   public shared func deleteClient(clientId : ClientId) : async () {
     ignore getClientInternal(clientId);
     clients.remove(clientId);
-    let filtered = logEntries.toArray().filter(
-      func((_, entry)) { entry.clientId != clientId }
+    clientPins.remove(clientId);
+    let toDelete = logEntries.entries().toArray().filter(
+      func((_, entry) : (LogEntryId, LogEntry)) : Bool {
+        entry.clientId == clientId;
+      },
     );
-    logEntries.clear();
-    for ((id, entry) in filtered.values()) {
-      logEntries.add(id, entry);
+    for ((eid, _) in toDelete.vals()) {
+      logEntries.remove(eid);
     };
   };
 
   public shared func addLogEntry(dto : CreateLogEntryDto) : async LogEntryId {
     ignore getClientInternal(dto.clientId);
-    let id = nextLogEntryId;
-    nextLogEntryId += 1;
+    let dayKey = dto.date / dayNs;
+
+    var existingId : ?LogEntryId = null;
+    for ((eid, entry) in logEntries.entries()) {
+      if (entry.clientId == dto.clientId and entry.date / dayNs == dayKey) {
+        existingId := ?eid;
+      };
+    };
+
+    let id = switch (existingId) {
+      case (?eid) { eid };
+      case (null) {
+        let newId = nextLogEntryId;
+        nextLogEntryId += 1;
+        newId;
+      };
+    };
+
     let logEntry : LogEntry = {
       id;
       clientId = dto.clientId;
@@ -173,7 +237,9 @@ actor {
   public query func getLogEntriesForClient(clientId : ClientId) : async [LogEntry] {
     ignore getClientInternal(clientId);
     let filtered = logEntries.values().toArray().filter(
-      func(entry) { entry.clientId == clientId }
+      func(entry : LogEntry) : Bool {
+        entry.clientId == clientId;
+      },
     );
     filtered.sort(compareLogEntries);
   };

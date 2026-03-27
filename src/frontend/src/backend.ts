@@ -158,6 +158,12 @@ export interface backendInterface {
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    verifyTrainerPin(pin: string): Promise<boolean>;
+    updateTrainerPin(pin: string): Promise<void>;
+    setClientPin(clientId: ClientId, pin: string): Promise<void>;
+    removeClientPin(clientId: ClientId): Promise<void>;
+    lookupClientByPin(pin: string): Promise<ClientId | null>;
+    getClientPin(clientId: ClientId): Promise<string | null>;
 }
 import type { Client as _Client, ClientId as _ClientId, CreateClientDto as _CreateClientDto, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
@@ -343,6 +349,54 @@ export class Backend implements backendInterface {
             const result = await this.actor.saveCallerUserProfile(arg0);
             return result;
         }
+    }
+    async verifyTrainerPin(arg0: string): Promise<boolean> {
+        if (this.processError) {
+            try { return await this.actor.verifyTrainerPin(arg0); }
+            catch (e) { this.processError(e); throw new Error("unreachable"); }
+        }
+        return await this.actor.verifyTrainerPin(arg0);
+    }
+    async updateTrainerPin(arg0: string): Promise<void> {
+        if (this.processError) {
+            try { return await this.actor.updateTrainerPin(arg0); }
+            catch (e) { this.processError(e); throw new Error("unreachable"); }
+        }
+        return await this.actor.updateTrainerPin(arg0);
+    }
+    async setClientPin(arg0: ClientId, arg1: string): Promise<void> {
+        if (this.processError) {
+            try { return await this.actor.setClientPin(arg0, arg1); }
+            catch (e) { this.processError(e); throw new Error("unreachable"); }
+        }
+        return await this.actor.setClientPin(arg0, arg1);
+    }
+    async removeClientPin(arg0: ClientId): Promise<void> {
+        if (this.processError) {
+            try { return await this.actor.removeClientPin(arg0); }
+            catch (e) { this.processError(e); throw new Error("unreachable"); }
+        }
+        return await this.actor.removeClientPin(arg0);
+    }
+    async lookupClientByPin(arg0: string): Promise<ClientId | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.lookupClientByPin(arg0);
+                return result.length === 0 ? null : result[0];
+            } catch (e) { this.processError(e); throw new Error("unreachable"); }
+        }
+        const result = await this.actor.lookupClientByPin(arg0);
+        return result.length === 0 ? null : result[0];
+    }
+    async getClientPin(arg0: ClientId): Promise<string | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getClientPin(arg0);
+                return result.length === 0 ? null : result[0];
+            } catch (e) { this.processError(e); throw new Error("unreachable"); }
+        }
+        const result = await this.actor.getClientPin(arg0);
+        return result.length === 0 ? null : result[0];
     }
 }
 function from_candid_Client_n6(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Client): Client {

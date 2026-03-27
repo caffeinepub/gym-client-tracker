@@ -63,6 +63,7 @@ export enum UserRole {
     guest = "guest"
 }
 export interface backendInterface {
+    _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
     addLogEntry(dto: CreateLogEntryDto): Promise<LogEntryId>;
     assignCallerUserRole(user: Principal, role: string): Promise<void>;
     createClient(dto: CreateClientDto): Promise<ClientId>;
@@ -75,4 +76,10 @@ export interface backendInterface {
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    verifyTrainerPin(pin: string): Promise<boolean>;
+    updateTrainerPin(pin: string): Promise<void>;
+    setClientPin(clientId: ClientId, pin: string): Promise<void>;
+    removeClientPin(clientId: ClientId): Promise<void>;
+    getAllClientPins(): Promise<Array<[ClientId, string]>>;
+    verifyClientPin(pin: string): Promise<ClientId | null>;
 }

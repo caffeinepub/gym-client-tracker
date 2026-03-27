@@ -44,7 +44,7 @@ export default function ClientDetail({ client, onBack }: Props) {
               </p>
             )}
           </div>
-          <LogEntryForm clientId={client.id} />
+          <LogEntryForm clientId={client.id} entries={entries} />
         </div>
       </div>
 

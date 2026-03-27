@@ -1,80 +1,138 @@
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@/components/ui/input-otp";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Toaster } from "@/components/ui/sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { REGEXP_ONLY_DIGITS } from "input-otp";
-import { Dumbbell, KeyRound, Plus, Trash2, Users } from "lucide-react";
+import { Dumbbell, LogOut, Plus, Settings, Trash2, Users } from "lucide-react";
 import { useState } from "react";
 import type { Client } from "./backend";
 import AddClientDialog from "./components/AddClientDialog";
 import ClientDetail from "./components/ClientDetail";
 import DeleteClientDialog from "./components/DeleteClientDialog";
-import LoginPage from "./components/LoginPage";
-import { useGetAllClients } from "./hooks/useQueries";
+import LogEntryForm from "./components/LogEntryForm";
+import LoginPage, { type LoginSession } from "./components/LoginPage";
+import MasterSettings from "./components/MasterSettings";
+import ProgressCharts from "./components/ProgressCharts";
+import { useGetAllClients, useGetLogEntries } from "./hooks/useQueries";
+
+function loadSession(): LoginSession | null {
+  try {
+    const raw = sessionStorage.getItem("gymtrack_session");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.type === "master") return { type: "master" };
+    if (parsed?.type === "client" && parsed.clientId !== undefined) {
+      return { type: "client", clientId: BigInt(parsed.clientId) };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(session: LoginSession) {
+  if (session.type === "master") {
+    sessionStorage.setItem(
+      "gymtrack_session",
+      JSON.stringify({ type: "master" }),
+    );
+  } else {
+    sessionStorage.setItem(
+      "gymtrack_session",
+      JSON.stringify({ type: "client", clientId: session.clientId.toString() }),
+    );
+  }
+}
+
+// Client view — shows only their own data
+function ClientView({
+  clientId,
+  onSignOut,
+}: {
+  clientId: bigint;
+  onSignOut: () => void;
+}) {
+  const { data: clients = [] } = useGetAllClients();
+  const { data: entries = [], isLoading: entriesLoading } =
+    useGetLogEntries(clientId);
+  const client = clients.find((c) => c.id === clientId);
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <Toaster />
+      <header className="border-b bg-card px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+            <Dumbbell className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div>
+            <span className="font-bold text-foreground text-base">
+              GymTrack
+            </span>
+            {client && (
+              <span className="ml-2 text-sm text-muted-foreground">
+                — {client.name}
+              </span>
+            )}
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          data-ocid="client_view.button"
+          className="gap-2 text-muted-foreground"
+          onClick={onSignOut}
+        >
+          <LogOut className="w-4 h-4" />
+          Sign out
+        </Button>
+      </header>
+      <main className="flex-1 max-w-4xl mx-auto w-full p-6 space-y-6">
+        <LogEntryForm clientId={clientId} entries={entries} />
+        <ProgressCharts entries={entries} isLoading={entriesLoading} />
+      </main>
+    </div>
+  );
+}
 
 export default function App() {
   const queryClient = useQueryClient();
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () => sessionStorage.getItem("gymtrack_session") === "authenticated",
-  );
 
+  const [session, setSession] = useState<LoginSession | null>(loadSession);
   const { data: clients = [], isLoading: clientsLoading } = useGetAllClients();
 
   const [selectedClientId, setSelectedClientId] = useState<bigint | null>(null);
   const [addClientOpen, setAddClientOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
   const [hoveredClientId, setHoveredClientId] = useState<bigint | null>(null);
-  const [changePinOpen, setChangePinOpen] = useState(false);
-  const [newPin, setNewPin] = useState("");
-  const [pinSaved, setPinSaved] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const selectedClient = clients.find((c) => c.id === selectedClientId) ?? null;
 
   const handleLogout = () => {
     sessionStorage.removeItem("gymtrack_session");
-    setIsAuthenticated(false);
+    setSession(null);
     queryClient.clear();
     setSelectedClientId(null);
   };
 
-  const handlePinChange = (value: string) => {
-    setNewPin(value);
-    if (value.length === 4) {
-      localStorage.setItem("gymtrack_pin", value);
-      setPinSaved(true);
-      setTimeout(() => {
-        setChangePinOpen(false);
-        setNewPin("");
-        setPinSaved(false);
-      }, 1200);
-    }
-  };
-
-  if (!isAuthenticated) {
+  if (!session) {
     return (
       <LoginPage
-        onSuccess={() => {
-          sessionStorage.setItem("gymtrack_session", "authenticated");
-          setIsAuthenticated(true);
+        onSuccess={(s) => {
+          saveSession(s);
+          setSession(s);
         }}
       />
     );
   }
 
-  // Full-screen client detail when a client is selected
+  // Client session: minimal view, only their data
+  if (session.type === "client") {
+    return <ClientView clientId={session.clientId} onSignOut={handleLogout} />;
+  }
+
+  // Master session: full sidebar view
   if (selectedClient) {
     return (
       <div className="min-h-screen bg-background">
@@ -93,7 +151,6 @@ export default function App() {
 
       {/* Sidebar */}
       <aside className="w-64 flex-shrink-0 flex flex-col border-r bg-card">
-        {/* Sidebar header */}
         <div className="px-4 py-4 border-b">
           <div className="flex items-center gap-2.5 mb-4">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
@@ -112,7 +169,6 @@ export default function App() {
           </Button>
         </div>
 
-        {/* Client list */}
         <ScrollArea className="flex-1">
           <div className="p-2" data-ocid="clients.list">
             {clientsLoading ? (
@@ -165,26 +221,21 @@ export default function App() {
           </div>
         </ScrollArea>
 
-        {/* Sidebar footer */}
         <div className="px-4 py-3 border-t space-y-1">
           <Button
             variant="ghost"
             size="sm"
             data-ocid="sidebar.toggle"
             className="w-full justify-start gap-2 text-xs h-7 text-muted-foreground"
-            onClick={() => {
-              setNewPin("");
-              setPinSaved(false);
-              setChangePinOpen(true);
-            }}
+            onClick={() => setSettingsOpen(true)}
           >
-            <KeyRound className="w-3.5 h-3.5" />
-            Change PIN
+            <Settings className="w-3.5 h-3.5" />
+            Settings
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            data-ocid="sidebar.secondary_button"
+            data-ocid="sidebar.button"
             className="w-full justify-start text-xs h-7"
             onClick={handleLogout}
           >
@@ -193,7 +244,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main content — no client selected */}
+      {/* Main content */}
       <main className="flex-1 overflow-auto">
         <div className="max-w-4xl mx-auto p-8">
           <div
@@ -212,8 +263,6 @@ export default function App() {
             </p>
           </div>
         </div>
-
-        {/* Footer */}
         <footer className="border-t px-8 py-4 mt-8">
           <p className="text-xs text-muted-foreground text-center">
             &copy; {new Date().getFullYear()}. Built with ❤️ using{" "}
@@ -242,70 +291,18 @@ export default function App() {
           clientName={deleteTarget.name}
           onClose={() => setDeleteTarget(null)}
           onDeleted={() => {
-            if (selectedClientId === deleteTarget?.id) {
+            if (selectedClientId === deleteTarget?.id)
               setSelectedClientId(null);
-            }
             setDeleteTarget(null);
           }}
         />
       )}
 
-      {/* Change PIN dialog */}
-      <Dialog
-        open={changePinOpen}
-        onOpenChange={(open) => {
-          setChangePinOpen(open);
-          if (!open) {
-            setNewPin("");
-            setPinSaved(false);
-          }
-        }}
-      >
-        <DialogContent data-ocid="pin.dialog" className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Change PIN</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col items-center gap-4 py-4">
-            {pinSaved ? (
-              <p
-                data-ocid="pin.success_state"
-                className="text-green-600 font-medium"
-              >
-                PIN updated successfully!
-              </p>
-            ) : (
-              <>
-                <p className="text-sm text-muted-foreground text-center">
-                  Enter a new 4-digit PIN
-                </p>
-                <InputOTP
-                  data-ocid="pin.input"
-                  maxLength={4}
-                  value={newPin}
-                  onChange={handlePinChange}
-                  pattern={REGEXP_ONLY_DIGITS}
-                >
-                  <InputOTPGroup>
-                    <InputOTPSlot index={0} />
-                    <InputOTPSlot index={1} />
-                    <InputOTPSlot index={2} />
-                    <InputOTPSlot index={3} />
-                  </InputOTPGroup>
-                </InputOTP>
-              </>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              data-ocid="pin.cancel_button"
-              variant="outline"
-              onClick={() => setChangePinOpen(false)}
-            >
-              Cancel
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MasterSettings
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        clients={clients}
+      />
     </div>
   );
 }
